@@ -1,0 +1,216 @@
+﻿@page "/Users"
+@using Reisinger_Intelliface_1_0.FaceRecognition;
+@using Reisinger_Intelliface_1_0.Services;
+@using Reisinger_Intelliface_1_0.Storage;
+@using Reisinger_Intelliface_1_0.Services
+@using Reisinger_Intelliface_1_0.Model.ViewModels
+@using Reisinger_Intelliface_1_0.FaceRecognition
+@using Reisinger_Intelliface_1_0.Storage
+@using Microsoft.EntityFrameworkCore
+@using System;
+@using Microsoft.JSInterop
+@inject NavigationManager NavigationManager
+
+
+
+
+
+
+
+
+<h2>Users</h2>
+
+
+
+<button class="btn btn-primary" @onclick="OpenCreateUserModal">Add User</button>
+<button class="btn btn-primary" @onclick="OpenVerifyUserModal">Verify User</button>
+
+<h3>All Users</h3>
+
+<table class="table">
+    <thead>
+        <tr>
+          
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Date of Birth</th>
+            <th>Email</th>   
+            <th>Gender</th>
+            <th>Nationality</th>
+            <th>Notes</th>
+            <th>Is Bulk Insert</th>
+            <!-- Fügen Sie die restlichen Tabellenkopfzeilen hinzu -->
+            <th>Upload Images</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var _employee in employees)
+        {
+            <tr>
+                <td>@_employee.First_Name</td>
+                <td>@_employee.Last_Name</td>
+                <td>@_employee.DateOfBirth.ToString("dd-MM-yyyy")</td>
+                <td>@_employee.Email</td>
+                <td>@_employee.Gender</td>
+                <td>@_employee.Nationality</td>
+                <td>@_employee.Notes</td>
+                <td>@_employee.IsBulkInsert</td>
+                <td>@CountUploadedImages(_employee.ID)</td>
+                <!-- Fügen Sie die restlichen Tabelleneinträge hinzu -->
+                <td >
+                    <a class="nav-link btn btn-primary" href="/EditUser/@_employee.ID">
+                        <span class="oi oi-pencil" area-hidden="true">Edit</span>
+                    </a>
+                </td>
+                <td >
+                    <a class="nav-link btn btn-primary" @onclick="() => DeleteUser(_employee.ID)">
+                        <span class="oi oi-pencil" area-hidden="true">Delete</span>
+                    </a>
+                </td>
+
+                
+            </tr>
+
+        }
+    </tbody>
+</table>
+
+
+
+@code {
+
+
+    private List<User> employees;
+    private List<FaceImage> faceImages;
+    private List<string> errors = new List<string>();
+
+
+    [Inject]
+    private IJSRuntime JSRuntime { get; set; }
+
+    [Inject]
+    private IRepository<User> EmployeeRepository { get; set; }
+
+    [Inject]
+    private EmployeeService EmployeeService { get; set; }
+
+    [Inject]
+    private IFaceRecognizer SeventhSenthService { get; set; }
+
+    [Inject]
+    private SeventhSenthService _seventhSenthService { get; set; }
+
+    [Inject]
+    private ILogger<Users> _logger { get; set; }
+
+
+
+
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        employees = await EmployeeService.GetAllEmployees();
+
+
+    }
+
+    private async Task DeleteUser(Guid userId)
+    {
+        string id = userId.ToString();
+        bool seventhDeletedSuccess;
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Möchten Sie fortfahren?");
+        if (confirmed)
+        {
+            // Hier können Sie den Benutzer und seine verknüpften Bilder löschen
+
+            // Zuerst den Benutzer löschen
+            await EmployeeRepository.DeleteAsync(userId);
+            seventhDeletedSuccess = await _seventhSenthService.SeventhDeletePerson(id);
+            if(seventhDeletedSuccess == true)
+            {
+                Console.WriteLine($"Api Deleted");
+                Console.WriteLine("Api Deleted");
+               
+            }
+            else if(seventhDeletedSuccess==false)
+            {
+                Console.WriteLine($"Api entry already Deleted");
+                Console.WriteLine("Api NOt Deleted");
+               
+            }
+
+            // Optional: Verknüpfte Bilder löschen (Abhängig von Ihrer Datenstruktur)
+            // await ImageRepository.DeleteImagesByUserIdAsync(userIdToDelete);
+
+            // Aktualisieren Sie die Oberfläche
+            StateHasChanged();
+            UpdateEmployeeList();
+            // Schließen Sie das Löschbestätigungsmodal
+
+        }
+        else
+        {
+
+            errors.Add($"Error deleting user");
+        }
+        StateHasChanged();
+    }
+
+
+    private async Task OpenCreateUserModal()
+    {
+        // Use NavigationManager to navigate to the CreateUser page
+        NavigationManager.NavigateTo("/CreateUser");
+    }
+
+    private async Task OpenVerifyUserModal()
+    {
+        // Use NavigationManager to navigate to the CreateUser page
+        NavigationManager.NavigateTo("/VerifyUser");
+    }
+    private int CountUploadedImages(Guid employeeId)
+    {
+        try
+        {
+            User retrievedEmployeeFromDb = EmployeeRepository
+                .GetQueryable()
+                .Include(m => m.Images)
+                .FirstOrDefault(m => m.ID == employeeId);
+
+            if (retrievedEmployeeFromDb != null)
+            {
+                return retrievedEmployeeFromDb.Images.Count;
+
+            }
+            else
+            {
+                // Employee mit der angegebenen ID wurde nicht gefunden
+                throw new Exception("Employee not found");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Hier können Sie die Ausnahme weiter behandeln oder loggen
+            Console.WriteLine($"Error counting images: {ex.Message}");
+            return -1; // Verwenden Sie einen speziellen Rückgabewert, um anzuzeigen, dass ein Fehler aufgetreten ist
+        }
+    }
+
+
+
+    
+    private async Task UpdateEmployeeList()
+    {
+        employees = await EmployeeService.GetAllEmployees();
+        StateHasChanged(); // Aktualisiere die Komponente
+    }
+    }
+
+<script src="customAlert.js">
+    window.showCustomAlert = function (message) {
+        alert(message);
+    };
+</script>

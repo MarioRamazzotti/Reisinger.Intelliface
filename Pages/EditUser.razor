@@ -1,0 +1,308 @@
+﻿@page "/EditUser/{employeeId}"
+@using Reisinger_Intelliface_1_0.Model;
+@using Reisinger_Intelliface_1_0.Model.ViewModels;
+@using Reisinger_Intelliface_1_0.Services;
+@using Reisinger_Intelliface_1_0.Storage;
+@using Reisinger_Intelliface_1_0.Services
+@using Reisinger_Intelliface_1_0.FaceRecognition
+@using Reisinger_Intelliface_1_0.Model.ViewModels
+@using System;
+@using Microsoft.EntityFrameworkCore;
+
+
+@* @inject EmployeeService EmployeeService *@
+
+
+
+<EditForm Model="_employee" OnValidSubmit="EditEmployee">
+    <DataAnnotationsValidator />
+    <div>
+        <label for="first-name">First Name:</label>
+        <InputText id="first-name" @bind-Value="_employee.First_Name" class="form-control">
+            <ValidationMessage For="@(() => _employee.First_Name)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="Last-name">Last Name:</label>
+        <InputText id="Last-name" @bind-Value="_employee.Last_Name" class="form-control">
+            <ValidationMessage For="@(() => _employee.Last_Name)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="gender">Gender:</label>
+        <InputSelect id="gender" @bind-Value="_employee.Gender" class="form-control">
+            <option value="" disabled selected>Select something...</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="Apache Kampfhelicopter">Apache Kampfhelikopter</option>
+        </InputSelect>
+        <ValidationMessage For="@(() => _employee.Gender)" />
+    </div>
+
+    <div>
+        <label for="dateOfBirth">Date of Birth:</label>
+        <InputDate id="dateOfBirth" @bind-Value="_employee.DateOfBirth" class="form-control" />
+        <ValidationMessage For="@(() => _employee.DateOfBirth)" />
+
+    </div>
+    <div>
+        <label for="email">Email:</label>
+        <InputText id="Email" @bind-Value="_employee.Email" class="form-control">
+            <ValidationMessage For="@(() => _employee.Email)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="nationality">Nationality:</label>
+        <InputText id="nationality" @bind-Value="_employee.Nationality" class="form-control">
+            <ValidationMessage For="@(() => _employee.Nationality)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="Notes">Notes:</label>
+        <InputTextArea id="notes" @bind-Value="_employee.Notes" class="form-control">
+            <ValidationMessage For="@(() => _employee.Notes)" />
+        </InputTextArea>
+    </div>
+    <InputFile id="imageFiles" OnChange="(e) => AddUserImages(e, _employee.ID)" style="display: none;" multiple />
+    <label for="imageFiles" style="cursor: pointer; padding: 10px 20px; font-size: 16px; font-weight: bold; text-align: center; white-space: nowrap; user-select: none; border: 2px solid #007bff; border-radius: 5px; color: #007bff; margin-top: 5px;">
+        Add Images to User  @_employee.First_Name @_employee.Last_Name
+    </label>
+    <button type="submit">Update Employee</button>
+</EditForm>
+<td>
+        <div style="background-color: #f2f2f2; padding: 10px; border-radius: 5px;">
+            <label for="Images" style="font-size: 18px; font-weight: bold;">Images</label>
+            @if (GetImagesFromEmployee(_employee.ID) != null && faceImages.Any())
+            {
+                <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    @foreach (var image in faceImages)
+                    {
+                        <div style="flex: 1 0 calc(16.66% - 5px); max-width: calc(16.66% - 5px); box-sizing: border-box; display: flex; flex-direction: column; margin-bottom: 10px;">
+                            <div style="flex: 1 1 auto;">
+                                <img src="@($"data:image/png;base64,{image.ImageData}")" alt="Face Image" style="width: 100%; height: 100%; object-fit: contain;" />
+                            </div>
+                            <div style="display: flex; flex-direction: column; align-items: center;">
+                                <button @onclick="() => DeleteImage(image.ID)">Delete</button>
+                                
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p>No images found for this employee.</p>
+            }
+
+            @if (errors.Count > 0)
+            {
+                <h2>Errors</h2>
+                <ul class="text-danger">
+                    @foreach (var error in errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            }
+        </div>
+    </td>
+
+
+
+
+
+
+@code {
+    [Inject] private EmployeeService EmployeeService { get; set; }
+    [Inject] private IRepository<User> EmployeeRepository { get; set; }
+    [Inject] private ILogger<Users> _logger { get; set; }
+    [Inject] NavigationManager NavigationManager { get; set; }
+    [Inject] private IJSRuntime JSRuntime { get; set; }
+
+    private User _employee = new User();
+    private List<FaceImage> faceImages;
+    private FaceImage _faceImage = new FaceImage();
+    private UserFrontViewModel _frontViewModel = new UserFrontViewModel();
+    private List<string> errors = new List<string>();
+    private List<string> statusList = new List<string>();
+    private List<string> baselist = new List<string>();
+    private long maxFileSize = 1024 * 1024 * 25; // 25 MB#
+    private bool isReplacing = false;
+    [Parameter] public string EmployeeId { get; set; }
+
+    protected override async void OnInitialized()
+    {
+        if (Guid.TryParse(EmployeeId, out Guid employeeGuid))
+        {
+            _employee = await EmployeeService.GetEmployeeById(employeeGuid);
+            
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/Users");
+        }
+    }
+
+    
+   
+
+    private List<FaceImage> GetImagesFromEmployee(Guid employeeId)
+    {
+        User? retrievedEmployeeFromDb = EmployeeRepository
+            .GetQueryable()
+            .Include(m => m.Images)
+            .FirstOrDefault(m => m.ID == employeeId);
+
+        faceImages = retrievedEmployeeFromDb?.Images;
+        return faceImages;
+    }
+
+    private async Task AddUserImages(InputFileChangeEventArgs e, Guid employeeId)
+    {
+        var selectedImages = e.GetMultipleFiles().Take(3).ToList();
+
+        if (selectedImages.Any(file => file.Size <= 0))
+        {
+            _logger.LogDebug("Fehler: Ungültige Dateigröße.");
+            return;
+        }
+
+        if (selectedImages != null)
+        {
+            foreach (var file in selectedImages)
+            {
+                var imageStream = file.OpenReadStream(maxFileSize);
+
+                if (!imageStream.CanRead)
+                {
+                    _logger.LogDebug("Fehler: Der Bild-Stream kann nicht gelesen werden.");
+                    return;
+                }
+
+                using (var memoryStream = new MemoryStream())
+                {
+                    await imageStream.CopyToAsync(memoryStream);
+                    byte[] imageBytes = memoryStream.ToArray();
+
+                    if (imageBytes.Length == imageStream.Length)
+                    {
+                        string base64Image = Convert.ToBase64String(imageBytes);
+
+                        var newFaceImage = new FaceImage
+                            {
+                                EmployeeId = employeeId,
+                                ImageData = base64Image
+                            };
+
+                        _employee.Images.Add(newFaceImage);
+
+
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Fehler beim Lesen der Bytes!");
+                    }
+                }
+
+            }
+            
+            await EmployeeRepository.UpdateAsync(_employee);
+        }
+        else
+        {
+            _logger.LogDebug("Es wurden nicht genau 3 Bilder ausgewählt!");
+        }
+    }
+
+
+    private async Task DeleteImage(Guid imageId)
+    {
+
+        try
+        {
+            FaceImage? catchedImage = _employee.Images.Find(m => m.ID == imageId);
+
+            if (catchedImage != null)
+            {
+                _employee.Images.Remove(catchedImage);
+                await EmployeeRepository.UpdateAsync(_employee);
+                _employee = await EmployeeService.GetEmployeeById(_employee.ID);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Error deleting image: {ex.Message}");
+        }
+       
+    }
+
+   
+
+
+    private void EditEmployee()
+    {
+        try
+        {
+   
+    // Überprüfen Sie alle erforderlichen Felder auf Leere oder null-Werte
+            if (string.IsNullOrWhiteSpace(_employee.First_Name))
+            {
+                errors.Add("First Name is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_employee.Last_Name))
+            {
+                errors.Add("Last Name is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_employee.Gender))
+            {
+                errors.Add("Gender is required.");
+            }
+
+            if (_employee.DateOfBirth == null)
+            {
+                errors.Add("Date of Birth is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_employee.Email))
+            {
+                errors.Add("Email is required.");
+            }
+          
+            if (string.IsNullOrWhiteSpace(_employee.Nationality))
+            {
+                errors.Add("Nationality is required.");
+            }
+
+    // Fügen Sie hier weitere Validierungen nach Bedarf hinzu
+
+            if (errors.Count > 0)
+            {
+    // Es gibt Validierungsfehler, beenden Sie die Methode
+                return;
+            }
+
+            EmployeeRepository.UpdateAsync(_employee);
+
+            statusList.Add("Employee updated successfully.");
+        }
+        catch (Exception ex)
+        {
+    
+            errors.Add($"Error updating employee: {ex.Message}");
+        }
+        NavigationManager.NavigateTo("/Users");
+    }
+}
+
+
+
+
+    
+

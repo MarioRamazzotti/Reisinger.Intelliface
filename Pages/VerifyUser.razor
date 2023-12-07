@@ -1,0 +1,156 @@
+﻿@page "/VerifyUser"
+@using Reisinger_Intelliface_1_0.Model
+@using Reisinger_Intelliface_1_0.Services
+@using Reisinger_Intelliface_1_0.FaceRecognition
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JsRuntime
+@inject HttpClient HttpClient
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <title>Face Recognition</title>
+</head>
+<body>
+<td>
+    <label for="imageFiles">Upload Images</label>
+    <InputFile id="imageFiles" OnChange="(e) => HandleFileSelection(e)" class="form-control"
+               multiple  />
+    
+    @if (errors.Count > 0)
+    {
+        <h2>Errors</h2>
+        <ul class="text-danger">
+            class="form-control"
+            @foreach (var error in errors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    }
+
+    <button class="btn btn-primary mt-3" @onclick="() => SendImagesToApi(streamImage)" type="button">
+        Upload Images
+    </button>
+        <div>
+            <textarea id="resultTextArea" rows="4" cols="50">@nameText: "is verified with a accuracy of " @scoreText"%" </textarea>
+        </div>
+
+        
+</td>
+</body>
+</html>
+@code {
+
+    private List<string> errors = new();
+    private long maxFileSize = 1024 * 1024 * 25; // 25 MB
+    private List<string> selectedImagePaths = new List<string>();
+    private StreamImage streamImage = new StreamImage();
+    private string scoreText;
+    private string nameText;
+    [Inject]
+    private IFaceRecognizer SeventhSenthService { get; set; }
+
+
+    private async Task HandleFileSelection(InputFileChangeEventArgs e)
+    {
+
+        if (selectedImagePaths != null||selectedImagePaths.Any())
+        {
+            // Bilder löschen, da neue hochgeladen werden
+            selectedImagePaths.Clear();
+            System.Diagnostics.Debug.WriteLine("Bisherige Bilder wurden gelöscht.");
+        }
+
+        var selectedImages = e.GetMultipleFiles().Take(3).ToList();
+
+        foreach (var file in selectedImages)
+        {
+            var imageStream = file.OpenReadStream();
+
+            // Überprüfe die maximale Dateigröße, bevor du den Stream liest
+            if (imageStream.Length > maxFileSize)
+            {
+                System.Diagnostics.Debug.WriteLine("Fehler: Die Dateigröße überschreitet das zulässige Maximum.");
+                continue; // Überspringe diese Datei und fahre mit der nächsten fort
+            }
+
+            try
+            {
+                using (var memoryStream = new MemoryStream())
+                {
+                    await imageStream.CopyToAsync(memoryStream);
+                    byte[] imageBytes = memoryStream.ToArray();
+
+                    // Überprüfe, ob alle Bytes gelesen wurden
+                    if (imageBytes.Length == imageStream.Length)
+                    {
+                        var base64Image = Convert.ToBase64String(imageBytes);
+                        System.Diagnostics.Debug.WriteLine("Base64 erstellt! + Count: "+base64Image.Length);
+
+                        // Stelle sicher, dass streamImage und seine Eigenschaften initialisiert wurden
+
+                        selectedImagePaths.Add(base64Image);
+                        System.Diagnostics.Debug.WriteLine("Zur Liste hinzugefügt!");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("Fehler beim Lesen der Bytes!");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fehler bei der Verarbeitung der Datei
+                System.Diagnostics.Debug.WriteLine($"Fehler beim Verarbeiten der Datei: {ex.Message}");
+            }
+            finally
+            {
+                // Schließe den Stream, um Ressourcen freizugeben
+                imageStream.Close();
+            }
+        }
+    }
+
+    private async Task SendImagesToApi(StreamImage streamImage)
+    {
+        try
+        {
+            var personRequest = new
+            {
+                id = streamImage.ID.ToString(),
+                collections = new[] { "string" },
+                images = selectedImagePaths,
+                max_results = 10,
+                min_score = 0.7,
+                search_mode = "ACCURATE"
+            };
+
+
+            List<FaceImage> fakeRecordedImages = new List<FaceImage>();
+
+            foreach (string base64Image in selectedImagePaths)
+            {
+                fakeRecordedImages.Add(new FaceImage()
+                {
+                    ImageData = base64Image
+                });
+            }
+
+            RecognizeResult result = await SeventhSenthService.SeventhRecognize(fakeRecordedImages);
+            scoreText = result.score.ToString();
+            nameText = result.name;
+
+        }
+        catch (Exception ex)
+        {
+            // Handle Ausnahmen hier, z.B. zeige eine Fehlermeldung an
+            Console.WriteLine($"Fehler beim Erstellen der Person: {ex.Message}");
+        }
+    }
+
+}

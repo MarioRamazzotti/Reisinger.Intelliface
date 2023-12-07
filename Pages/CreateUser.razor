@@ -1,0 +1,220 @@
+﻿@page "/CreateUser"
+@using Reisinger_Intelliface_1_0.FaceRecognition;
+@using Reisinger_Intelliface_1_0.Model.ViewModels;
+@using Reisinger_Intelliface_1_0.Services;
+@using Reisinger_Intelliface_1_0.Services
+@using Newtonsoft.Json
+@using Reisinger_Intelliface_1_0.FaceRecognition
+@using Reisinger_Intelliface_1_0.Model.ViewModels
+
+@* @inject EmployeeService EmployeeService *@
+
+
+
+
+<h3>Create User</h3>
+
+
+
+<EditForm Model="_frontViewModel" OnValidSubmit="AddEmployee">
+    <DataAnnotationsValidator />
+    <div>
+        <label for="first-name">First Name:</label>
+        <InputText id="first-name" @bind-Value="_frontViewModel.First_Name" class="form-control">
+            <ValidationMessage For="@(() => _frontViewModel.First_Name)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="Last-name">Last Name:</label>
+        <InputText id="Last-name" @bind-Value="_frontViewModel.Last_Name" class="form-control">
+            <ValidationMessage For="@(() => _frontViewModel.Last_Name)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="gender">Gender:</label>
+        <InputSelect id="gender" @bind-Value="_frontViewModel.Gender" class="form-control">
+            <option value="" disabled selected>Select something...</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="Apache Kampfhelicopter">Apache Kampfhelikopter</option>
+        </InputSelect>
+        <ValidationMessage For="@(() => _frontViewModel.Gender)" />
+    </div>
+
+    <div>
+        <label for="dateOfBirth">Date of Birth:</label>
+        <InputDate id="dateOfBirth" @bind-Value="_frontViewModel.DateOfBirth" class="form-control" />
+        <ValidationMessage For="@(() => _frontViewModel.DateOfBirth)" />
+
+    </div>
+    <div>
+        <label for="email">Email:</label>
+        <InputText id="Email" @bind-Value="_frontViewModel.Email" class="form-control">
+            <ValidationMessage For="@(() => _frontViewModel.Email)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="nationality">Nationality:</label>
+        <InputText id="nationality" @bind-Value="_frontViewModel.Nationality" class="form-control">
+            <ValidationMessage For="@(() => _frontViewModel.Nationality)" />
+        </InputText>
+    </div>
+
+    <div>
+        <label for="notes">Notes:</label>
+        <InputTextArea id="notes" @bind-Value="_frontViewModel.Notes" class="form-control">
+            <ValidationMessage For="@(() => _frontViewModel.Notes)" />
+        </InputTextArea>
+    </div>
+    <td>
+        <label for="imageFiles">Upload Images</label>
+        <InputFile id="imageFiles" OnChange="(e) => HandleFileSelection(e, _frontViewModel.Id)" class="form-control"
+                   multiple  />
+        
+        @if (errors.Count > 0)
+        {
+            <h2>Errors</h2>
+            <ul class="text-danger">
+                class="form-control"
+                @foreach (var error in errors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+        
+                    
+    </td>
+
+    <button type="submit" disabled="@(_frontViewModel.ImagesAsBase64.Count < 3)">Submit</button>
+</EditForm>
+
+
+@code {  
+    private UserFrontViewModel _frontViewModel = new UserFrontViewModel();
+    private List<FaceImage> faceImages;
+    private List<string> errors = new();
+    private int maxAllowedFiles = 3;
+    private List<string> selectedImagePaths = new List<string>();
+    private long maxFileSize = 1024 * 1024 * 25; // 25 MB
+
+
+    [Inject]
+    private EmployeeService EmployeeService { get; set; }
+
+    [Inject]
+    private IFaceRecognizer SeventhSenthService { get; set; }
+
+    [Inject]
+    private ILogger<Users> _logger { get; set; }
+
+
+
+
+    private async Task AddEmployee()
+    {
+        
+
+        User createdUser = await EmployeeService.CreateUser(_frontViewModel);
+
+        if (createdUser.IsTeached)
+        {
+            // Report that teaching was successful
+            // Reset inputs for a new user
+            _frontViewModel = new UserFrontViewModel();
+            _logger.LogDebug("User added successfully. Inputs reset for a new user.");
+        }
+        else
+        {
+            _frontViewModel = new UserFrontViewModel();
+            // Handle the case when teaching was not successful
+            _logger.LogDebug("Failed to add user or teach.");
+        }
+
+    }
+    
+    private async Task HandleFileSelection(InputFileChangeEventArgs e, Guid employeeId)
+    {
+        // Hier erhalten Sie die ausgewählten Bilder
+        var selectedImages = e.GetMultipleFiles().Take(3).ToList();
+        _logger.LogDebug("3 " + employeeId);
+
+
+
+        _logger.LogDebug("3 Bilder wurden ausgewählt!");
+        if (selectedImages.Any(file => file.Size <= 0))
+        {
+            // Fehler behandeln, z.B. dem Benutzer eine Meldung anzeigen
+            _logger.LogDebug("Fehler: Ungültige Dateigröße.");
+            return;
+        }
+
+        // Überprüfen, ob 3 Bilder ausgewählt wurden
+        if (selectedImages.Count == 3)
+        {
+            _logger.LogDebug("Weiter geht's!");
+
+            foreach (var file in selectedImages)
+            {
+                _logger.LogDebug("Schleifenanfang!");
+                var imageStream = file.OpenReadStream(maxFileSize);
+                _logger.LogDebug("FIlstream in imageData");
+                //imageStream.Seek(0, SeekOrigin.Begin);
+                _logger.LogDebug("Position des Streams am Anfang");
+
+                _logger.LogDebug("read stream!");
+                if (!imageStream.CanRead)
+                {
+                    // Fehler behandeln, z.B. dem Benutzer eine Meldung anzeigen
+                    _logger.LogDebug("Fehler: Der Bild-Stream kann nicht gelesen werden.");
+                    return;
+                }
+                using (var memoryStream = new MemoryStream())
+                {
+                    await imageStream.CopyToAsync(memoryStream);
+                    byte[] imageBytes = memoryStream.ToArray();
+
+                    if (imageBytes.Length == imageStream.Length)
+                    {
+                        _logger.LogDebug("Alle Bytes wurden gelesen!");
+                        // Hier können Sie imageData verwenden, um beispielsweise ein Base64 zu erstellen
+                        var base64Image = Convert.ToBase64String(imageBytes);
+                        _logger.LogDebug("Base64 erstellt!");
+
+                        // Fügen Sie den Base64-String oder den Stream, je nach Bedarf, zur Liste hinzu
+                        _frontViewModel.ImagesAsBase64.Add(base64Image);
+                        _logger.LogDebug("Zur Liste hinzugefügt!");
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Fehler beim Lesen der Bytes!");
+                    }
+                    // Verwenden Sie base64Image nach Bedarf...
+                }
+
+                // Überprüfen, ob alle Bytes gelesen wurden
+
+            }
+            _logger.LogDebug("Inhalt von selectedImagePaths:");
+
+            foreach (var imagePath in selectedImagePaths)
+            {
+                _logger.LogDebug(imagePath);
+            }
+
+            _logger.LogDebug("Schleifenende!");
+        }
+        else
+        {
+            // Ausgabe im Output-Fenster von Visual Studio
+            _logger.LogDebug("Es wurden nicht genau 3 Bilder ausgewählt!");
+        }
+    }
+
+
+
+
+}
